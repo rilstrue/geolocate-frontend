@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
+import Auth from './Auth';
+import { API_URL, authHeader, fetchMe, clearToken } from './api';
 
 function App() {
+  const [user, setUser] = useState(undefined); // undefined = идёт проверка токена
   const [page, setPage] = useState('home');
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    fetchMe().then(setUser);
+  }, []);
 
   const steps = [
     'Visual analysis',
@@ -21,6 +28,15 @@ function App() {
     if (!f) return;
     setFile(f);
     setPreview(URL.createObjectURL(f));
+    setResult(null);
+    setStep(0);
+  }
+
+  function logout() {
+    clearToken();
+    setUser(null);
+    setFile(null);
+    setPreview(null);
     setResult(null);
     setStep(0);
   }
@@ -39,17 +55,34 @@ function App() {
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch('https://geolocate-backend-production.up.railway.app/analyze', {
+      const response = await fetch(`${API_URL}/analyze`, {
         method: 'POST',
+        headers: authHeader(),
         body: formData
       });
 
+      // Токен истёк или недействителен: возвращаем на экран входа
+      if (response.status === 401) {
+        setAnalyzing(false);
+        logout();
+        return;
+      }
+
       const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Request failed');
       setResult(result);
     } catch (e) {
       setResult({ location: 'Error', lat: 48.85, lng: 2.35, confidence: 0, clues: ['Could not connect to server', 'Make sure backend is running', 'Check console for details', 'Try again'] });
     }
     setAnalyzing(false);
+  }
+
+  if (user === undefined) {
+    return <div style={{ minHeight: '100vh', background: '#0a0a0f' }} />;
+  }
+
+  if (!user) {
+    return <Auth onAuth={setUser} />;
   }
 
   return (
@@ -59,12 +92,16 @@ function App() {
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c6ef5' }} />
           GeoLocate<span style={{ color: '#5a5a7a', fontWeight: 400 }}>.ai</span>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {['home', 'history', 'pricing'].map(p => (
             <button key={p} onClick={() => setPage(p)} style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, cursor: 'pointer', border: '1px solid #2a2a3e', background: page === p ? '#7c6ef5' : 'transparent', color: page === p ? '#fff' : '#a0a0b8' }}>
               {p.charAt(0).toUpperCase() + p.slice(1)}
             </button>
           ))}
+          <span style={{ fontSize: 12, color: '#5a5a7a', marginLeft: 8 }}>{user.email}</span>
+          <button onClick={logout} style={{ padding: '6px 14px', borderRadius: 6, fontSize: 13, cursor: 'pointer', border: '1px solid #2a2a3e', background: 'transparent', color: '#a0a0b8' }}>
+            Выйти
+          </button>
         </div>
       </nav>
 
